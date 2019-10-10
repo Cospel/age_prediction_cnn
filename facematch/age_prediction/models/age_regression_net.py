@@ -4,6 +4,8 @@ from keras.optimizers import Adam
 from keras.layers import Dense, GlobalAveragePooling2D
 from keras.applications.mobilenet_v2 import MobileNetV2
 from keras.applications.resnet50 import ResNet50
+from keras.layers.normalization import BatchNormalization
+from keras.layers.core import Dropout
 
 CLASSES_NUMBER = 100
 GENDERS_NUMBER = 2
@@ -12,10 +14,11 @@ RESNET_MODEL_NAME = "ResNet50"
 
 
 class AgeRegressionNet:
-    def __init__(self, base_model, img_shape, predict_gender=False):
+    def __init__(self, base_model, img_shape, learning_rate, predict_gender=False):
         self.base_model_name = base_model
         self.img_shape = img_shape
         self.predict_gender = predict_gender
+        self.learning_rate = learning_rate
         self._get_base_module()
 
     def build(self):
@@ -26,6 +29,8 @@ class AgeRegressionNet:
 
         x = self.base_model.output
         x = GlobalAveragePooling2D()(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
 
         if not self.predict_gender:
             x = Dense(units=1, activation="sigmoid")(x)
@@ -43,8 +48,7 @@ class AgeRegressionNet:
             self.base_module = importlib.import_module("keras.applications.resnet50")
 
     def compile(self):
-        learning_rate = 0.001
-        optimizer = Adam(lr=learning_rate)
+        optimizer = Adam(lr=self.learning_rate)
 
         age_loss = "mean_squared_error"
         if not self.predict_gender:

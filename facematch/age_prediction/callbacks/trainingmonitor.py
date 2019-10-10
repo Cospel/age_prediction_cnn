@@ -41,17 +41,6 @@ class TrainingMonitor(BaseLogger):
         # print(logs)
         for (k, v) in logs.items():
             self.H[k].append(v)
-            # l = self.H.get(k, [])
-            # l.append(v)
-
-        # print(self.H)
-
-        # check to see if the training history should be serialized
-        # to file
-        # if self.jsonPath is not None:
-        #     f = open(self.jsonPath, "w")
-        #     f.write(json.dumps(self.H))
-        #     f.close()
 
         # ensure at least two epochs have passed before plotting
         # (epoch starts at zero)
@@ -61,9 +50,12 @@ class TrainingMonitor(BaseLogger):
             plt.style.use("ggplot")
             plt.figure()
             plt.plot(N, self.H["loss"], label="train_loss")
-            plt.plot(N, self.H["val_loss"], label="val_loss")
-            plt.plot(N, self.H["age_output_acc"], label="age_output_acc")
-            plt.plot(N, self.H["val_age_output_acc"], label="val_age_output_acc")
+            if "val_loss" in self.H:
+                plt.plot(N, self.H["val_loss"], label="val_loss")
+            if "age_output_acc" in self.H:
+                plt.plot(N, self.H["age_output_acc"], label="age_output_acc")
+            if "val_age_output_acc" in self.H:
+                plt.plot(N, self.H["val_age_output_acc"], label="val_age_output_acc")
             plt.title("Training Loss and Accuracy [Epoch {}]".format(len(self.H["loss"])))
             plt.xlabel("Epoch #")
             plt.ylabel("Loss/Accuracy")

@@ -1,5 +1,5 @@
 import numpy as np
-
+from scipy.special import softmax
 CLASSES_NUMBER = 100
 MAX_AGE = 100
 RANGE_LENGTH = 5

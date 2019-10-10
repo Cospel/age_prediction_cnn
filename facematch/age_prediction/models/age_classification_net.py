@@ -1,9 +1,12 @@
 import importlib
 from keras.models import Model
 from keras.optimizers import Adam
+from keras.layers.normalization import BatchNormalization
 from keras.layers import Dense, GlobalAveragePooling2D
 from keras.applications.mobilenet_v2 import MobileNetV2
 from keras.applications.resnet50 import ResNet50
+from keras.layers.core import Dropout
+
 from facematch.age_prediction.utils.utils import age_ranges_number
 from facematch.age_prediction.utils.metrics import earth_movers_distance, age_mae
 
@@ -17,11 +20,12 @@ RESNET_MODEL_NAME = "ResNet50"
 
 
 class AgeClassificationNet:
-    def __init__(self, base_model_name, img_shape, range_mode=False, predict_gender=False):
+    def __init__(self, base_model_name, img_shape, learning_rate, range_mode=False, predict_gender=False):
         self.base_model_name = base_model_name
         self.img_shape = img_shape
         self.range_mode = range_mode
         self.predict_gender = predict_gender
+        self.learning_rate = learning_rate
         self._get_base_module()
 
     def build(self):
@@ -32,6 +36,8 @@ class AgeClassificationNet:
 
         x = self.base_model.output
         x = GlobalAveragePooling2D()(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
 
         if self.range_mode:
             age_classes_number = age_ranges_number()
@@ -57,8 +63,7 @@ class AgeClassificationNet:
             self.base_module = importlib.import_module("keras.applications.resnet50")
 
     def compile(self):
-        learning_rate = 1e-2  # 1e-5 # 1e-1 # MIN_LR in Learning rate Finder # 0.0001 # 0.001
-        optimizer = Adam(lr=learning_rate)
+        optimizer = Adam(lr=self.learning_rate)
 
         if self.range_mode:
             age_loss = "categorical_crossentropy"

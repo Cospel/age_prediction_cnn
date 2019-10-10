@@ -43,7 +43,7 @@ To run this script:
 
 When you are going to train the age predictor you just need to run python.
 
-    python train_model.py --type <model_type> --range_mode True --train_sample_dir <train_sample_dir> --test_sample_dir <test_sample_dir> --model_path <model_path> --base_model <base_model_name> --img_dim <img_dim> --batch_size <batch_size> --lr_scheduler <lr_scheduler> --age_deviation <age_deviation> --load True --predict_gender True --fine_tuning True --lr_find True
+    python train_model.py --type <model_type> --range_mode True --train_sample_dir <train_sample_dir> --test_sample_dir <test_sample_dir> --model_path <model_path> --base_model <base_model_name> --img_dim <img_dim> --batch_size <batch_size> --lr_scheduler <lr_scheduler> --age_deviation <age_deviation> --load --predict_gender --fine_tuning --lr_find
 
 Here **--type** denotes the type of NN model and can have two values ("classification" and "regression").
 

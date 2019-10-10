@@ -14,12 +14,13 @@ from facematch.age_prediction.optimization.clr_callback import CyclicLR
 from facematch.age_prediction.optimization.learningratefinder import LearningRateFinder
 from facematch.age_prediction.callbacks.trainingmonitor import TrainingMonitor
 from facematch.age_prediction.callbacks.terminateonnan import TerminateOnNan
+from facematch.age_prediction.callbacks.save import SaveCallback
 from facematch.age_prediction.models.age_classification_net import AgeClassificationNet
 from facematch.age_prediction.models.age_regression_net import AgeRegressionNet
 from facematch.age_prediction.utils.metrics import earth_movers_distance, age_mae
 from facematch.age_prediction.utils.utils import get_range
 
-EPOCHS = 15
+EPOCHS = 50
 
 matplotlib.use("Agg")
 
@@ -32,8 +33,11 @@ def train_model():
     parser.add_argument("-d", "--train_sample_dir", help="Path to raw images for training")
     parser.add_argument("-v", "--test_sample_dir", help="Path to images for validation")
     parser.add_argument("-w", "--model_path", help="Path to model JSON and weights")
-    parser.add_argument("-s", "--img_dim", type=int, help="Dimension of input images for training (width, height)")
-    parser.add_argument("-bs", "--batch_size", type=int, default=5, help="Size of batch to use for training")
+    parser.add_argument("-lr", "--learning_rate", help="Learning rate for optimizer", default=0.001)
+    parser.add_argument(
+        "-s", "--img_dim", type=int, help="Dimension of input images for training (width, height)", default=128
+    )
+    parser.add_argument("-bs", "--batch_size", type=int, default=24, help="Size of batch to use for training")
     parser.add_argument(
         "-o",
         "--lr_scheduler",
@@ -42,22 +46,27 @@ def train_model():
         help="Learning rate scheduler to use (reduce_lr_on_plateau, cyclic_lr)",
     )
     parser.add_argument("-dev", "--age_deviation", type=int, default=5, help="Deviation in age vector")
-    parser.add_argument("-t", "--type", type=str, help="Type of model to use (regression, classification)")  #
+    parser.add_argument(
+        "-t", "--type", type=str, default="classification", help="Type of model to use (regression, classification)"
+    )
     parser.add_argument(
         "-rm",
         "--range_mode",
-        default=False,
-        type=bool,
+        action='store_true',
         help="Run age prediction in range mode (age prediction in ranges like 0 - 5, 6 - 10 etc). If not set run in age vector mode (normal probability histogram)",
     )
     parser.add_argument(
-        "-b", "--base_model", type=str, help="Base model to use in the NN model (MobileNetV2, ResNet50)"
+        "-b",
+        "--base_model",
+        type=str,
+        help="Base model to use in the NN model (MobileNetV2, ResNet50)",
+        default="MobileNetV2",
     )
-    parser.add_argument("-l", "--load", default=False, type=bool, help="Load model from file")
-    parser.add_argument("-gnd", "--predict_gender", default=False, type=bool, help="Apply gender prediction")
-    parser.add_argument("-ft", "--fine_tuning", default=False, type=bool, help="Apply fine tuning to model")
+    parser.add_argument("-test", "--test", action='store_true', help="Load model from file")
+    parser.add_argument("-gnd", "--predict_gender", action='store_true', help="Apply gender prediction")
+    parser.add_argument("-ft", "--fine_tuning", action='store_true', help="Apply fine tuning to model")
     parser.add_argument(
-        "-f", "--lr_find", type=bool, default=False, help="whether or not to find optimal learning rate"
+        "-f", "--lr_find", action='store_true', help="whether or not to find optimal learning rate"
     )
     args = vars(parser.parse_args())
 
@@ -67,15 +76,17 @@ def train_model():
 
     if args["type"] == "classification":
         age_model = AgeClassificationNet(
-            args["base_model"], (img_dim, img_dim, 3), args["range_mode"], args["predict_gender"]
+            args["base_model"], (img_dim, img_dim, 3), args["learning_rate"], args["range_mode"], args["predict_gender"]
         )
     else:
         # Regression model
-        age_model = AgeRegressionNet(args["base_model"], (img_dim, img_dim, 3), args["predict_gender"])
+        age_model = AgeRegressionNet(args["base_model"], (img_dim, img_dim, 3), args["learning_rate"], args["predict_gender"])
 
-    if not args["load"]:
+    if not args["test"]:
         age_model.build()
         # age_model.model.summary()
+        if args["model_path"]:
+            age_model.model = load_model(args["model_path"])
 
         train_generator = DataGenerator(
             args,
@@ -91,10 +102,6 @@ def train_model():
             basemodel_preprocess=age_model.preprocessing_function(),
             shuffle=False,
         )
-
-        # freeze the base model
-        for layer in age_model.base_model.layers:
-            layer.trainable = False
 
         # Compile model
         age_model.compile()
@@ -136,19 +143,23 @@ def train_model():
 
         # Add training monitor
         # construct the set of callbacks
-        figPath = os.path.sep.join(["output", "{}.png".format(os.getpid())])
-        jsonPath = os.path.sep.join(["output", "{}.json".format(os.getpid())])
-
-        training_monitor = TrainingMonitor(figPath, jsonPath=jsonPath)
-
+        os.makedirs("output", exist_ok=True)
+        training_monitor = TrainingMonitor(
+            os.path.sep.join(["output", "{}.png".format(os.getpid())]),
+            jsonPath=os.path.sep.join(["output", "{}.json".format(os.getpid())]),
+        )
         terminateonnan = TerminateOnNan()
+
+        # add the learning rate schedule to the list of callbacks
+        callbacks = [checkpoint, training_monitor, terminateonnan, SaveCallback()]
 
         # Apply learning rate schedules
         if args["lr_scheduler"] == "reduce_lr_on_plateau":
             lr_scheduler = ReduceLROnPlateau(
                 monitor="val_loss", factor=0.2, patience=3, min_lr=1e-6
-            )  # patience=5, min_lr=0.00001
-        else:
+            )
+            callbacks += [lr_scheduler]
+        elif args["lr_scheduler"] == "cycliclr":
             # We using the triangular learning rate policy and
             #  base_lr (initial learning rate which is the lower boundary in the cycle)
             lr_scheduler = CyclicLR(
@@ -157,23 +168,31 @@ def train_model():
                 max_lr=1e-1,
                 step_size=8 * (train_generator.dataset_size / args["batch_size"]),
             )
-
-        # add the learning rate schedule to the list of callbacks
-        callbacks = [checkpoint, training_monitor, lr_scheduler, terminateonnan]
+            callbacks += [lr_scheduler]
 
         # Applying fine tuning
         if args["fine_tuning"]:
+            # freeze layers
+            for layer in age_model.base_model.layers:
+                layer.trainable = False
+
+            # Compile model
+            age_model.compile()
+
             # Train without loop and prediction monitoring
             age_model.model.fit_generator(
                 generator=train_generator,
                 validation_data=validation_generator,
-                epochs=10,
+                epochs=2,
                 callbacks=callbacks,
                 verbose=1,
+                max_queue_size=args["batch_size"] * 10,
+                workers=3,
+                use_multiprocessing=False
             )
 
             # unfreeze the final set of CONV layers and make them trainable
-            for layer in age_model.base_model.layers[152:]:  # 147 - MobileNetV2, 171 - ResNet50
+            for layer in age_model.base_model.layers:
                 layer.trainable = True
 
             # Compile model
@@ -185,6 +204,9 @@ def train_model():
                 epochs=35,
                 callbacks=callbacks,
                 verbose=1,
+                max_queue_size=args["batch_size"] * 10,
+                workers=3,
+                use_multiprocessing=False
             )
         else:
             age_model.model.fit_generator(
@@ -193,15 +215,16 @@ def train_model():
                 epochs=EPOCHS,
                 callbacks=callbacks,
                 verbose=1,
+                max_queue_size=args["batch_size"] * 10,
+                workers=3,
+                use_multiprocessing=False
             )
 
         # save the entire model
-        model_file = os.path.join(args["model_path"], "model.h5")
-        age_model.model.save(model_file)
-    else:
+        age_model.model.save("model.h5")
+    elif args["model_path"] and args["test"]:
         # Load model from file
-        model_file = os.path.join(args["model_path"], "model.h5")
-        age_model.model = load_model(model_file)
+        age_model.model = load_model(args["model_path"])
 
         image_files = [f for f in os.listdir(args["test_sample_dir"])]
 
