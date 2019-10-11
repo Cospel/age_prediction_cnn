@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import keras
 from keras.utils import to_categorical
+import imgaug
 from imgaug import augmenters as iaa
 from facematch.age_prediction.utils.utils import build_age_vector, age_ranges_number, get_age_range_index
 
@@ -30,6 +31,35 @@ class DataGenerator(keras.utils.Sequence):
         self.generator_type = generator_type
         self.shuffle = shuffle
 
+        sometimes = lambda aug: iaa.Sometimes(0.5, aug)
+        self.seq = iaa.Sequential(
+            [
+               iaa.Fliplr(0.5),
+               iaa.ChannelShuffle(0.25),
+               sometimes(
+                 iaa.OneOf([
+                    iaa.Dropout((0.01, 0.1), per_channel=0.5), # randomly remove up to 10% of the pixels
+                    iaa.CoarseDropout((0.03, 0.15), size_percent=(0.02, 0.2), per_channel=True)
+                 ])
+               ),
+               iaa.OneOf([
+                 iaa.GaussianBlur((0, 0.4)),
+                 iaa.MedianBlur((1,3)),
+                 iaa.MotionBlur(k=(3,5), angle=(0,360))
+               ]),
+               iaa.JpegCompression((0,50)),
+               iaa.OneOf([
+                 iaa.Multiply((0.7, 1.4), per_channel=0.5),
+                 iaa.GammaContrast((0.7, 1.4), per_channel=0.5)
+               ]),
+               iaa.Grayscale(alpha=(0.0, 1.0)),
+               sometimes(iaa.CropAndPad(
+                 percent=(-0.05, 0.1),
+                 pad_mode=imgaug.ALL,
+                 pad_cval=(0, 255)
+               ))
+            ], random_order=True  # horizontally flip 50% of all images
+        )
         self.load_sample_files()
         self.indexes = np.arange(self.dataset_size)
 
@@ -44,7 +74,6 @@ class DataGenerator(keras.utils.Sequence):
 
         X, y_age, y_gender = self.__data_generator(list_ids)
 
-        X = self.augmentor(X)
         if not self.predict_gender:
             return X, y_age
         else:
@@ -70,10 +99,7 @@ class DataGenerator(keras.utils.Sequence):
 
     def augmentor(self, images):
         "Apply data augmentation"
-        seq = iaa.Sequential(
-            [iaa.Fliplr(0.5), iaa.GaussianBlur((0, 0.5))], random_order=True  # horizontally flip 50% of all images
-        )
-        return seq.augment_images(images)
+        return self.seq.augment_images(images)
 
     def process_file(self, file_name):
         image, y_age, y_gender = None, None, None
@@ -84,6 +110,10 @@ class DataGenerator(keras.utils.Sequence):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         image = cv2.resize(image, self.img_dims)
+
+        # augment data only during the training
+        if self.shuffle:
+            image = self.augmentor([image])[0]
 
         # apply basenet specific preprocessing
         image = self.basemodel_preprocess(image)

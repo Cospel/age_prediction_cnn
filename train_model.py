@@ -45,6 +45,13 @@ def train_model():
         default="reduce_lr_on_plateau",
         help="Learning rate scheduler to use (reduce_lr_on_plateau, cyclic_lr)",
     )
+    parser.add_argument(
+        "-sp",
+        "--save_path",
+        type=str,
+        default="result.h5",
+        help="save model path after each epoch",
+    )
     parser.add_argument("-dev", "--age_deviation", type=int, default=5, help="Deviation in age vector")
     parser.add_argument(
         "-t", "--type", type=str, default="classification", help="Type of model to use (regression, classification)"
@@ -137,9 +144,9 @@ def train_model():
             return
 
         # Add model checkpoint
-        checkpoint = ModelCheckpoint("model_out.hdf5", monitor="val_loss", verbose=1, save_best_only=True)
+        # checkpoint = ModelCheckpoint("model_out.hdf5", monitor="val_loss", verbose=1, save_best_only=True)
 
-        es = EarlyStopping(monitor="val_loss", mode="min", verbose=1, patience=5)
+        es = EarlyStopping(monitor="val_loss", mode="min", verbose=1, patience=7)
 
         # Add training monitor
         # construct the set of callbacks
@@ -151,7 +158,7 @@ def train_model():
         terminateonnan = TerminateOnNan()
 
         # add the learning rate schedule to the list of callbacks
-        callbacks = [checkpoint, training_monitor, terminateonnan, SaveCallback()]
+        callbacks = [training_monitor, terminateonnan, SaveCallback(args["save_path"])]
 
         # Apply learning rate schedules
         if args["lr_scheduler"] == "reduce_lr_on_plateau":
@@ -183,12 +190,12 @@ def train_model():
             age_model.model.fit_generator(
                 generator=train_generator,
                 validation_data=validation_generator,
-                epochs=2,
+                epochs=5,
                 callbacks=callbacks,
                 verbose=1,
                 max_queue_size=args["batch_size"] * 10,
-                workers=3,
-                use_multiprocessing=False
+                workers=5,
+                use_multiprocessing=True
             )
 
             # unfreeze the final set of CONV layers and make them trainable
@@ -201,12 +208,12 @@ def train_model():
             age_model.model.fit_generator(
                 generator=train_generator,
                 validation_data=validation_generator,
-                epochs=35,
+                epochs=50,
                 callbacks=callbacks,
                 verbose=1,
                 max_queue_size=args["batch_size"] * 10,
-                workers=3,
-                use_multiprocessing=False
+                workers=10,
+                use_multiprocessing=True
             )
         else:
             age_model.model.fit_generator(
@@ -216,8 +223,8 @@ def train_model():
                 callbacks=callbacks,
                 verbose=1,
                 max_queue_size=args["batch_size"] * 10,
-                workers=3,
-                use_multiprocessing=False
+                workers=5,
+                use_multiprocessing=True
             )
 
         # save the entire model
