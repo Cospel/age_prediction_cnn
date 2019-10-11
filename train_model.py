@@ -37,7 +37,7 @@ def train_model():
     parser.add_argument(
         "-s", "--img_dim", type=int, help="Dimension of input images for training (width, height)", default=128
     )
-    parser.add_argument("-bs", "--batch_size", type=int, default=24, help="Size of batch to use for training")
+    parser.add_argument("-bs", "--batch_size", type=int, default=48, help="Size of batch to use for training")
     parser.add_argument(
         "-o",
         "--lr_scheduler",
@@ -87,7 +87,6 @@ def train_model():
         # age_model.model.summary()
         if args["model_path"]:
             age_model.model = load_model(args["model_path"])
-
         train_generator = DataGenerator(
             args,
             samples_directory=args["train_sample_dir"],
@@ -105,6 +104,7 @@ def train_model():
 
         # Compile model
         age_model.compile()
+        age_model.model.save("start.h5", include_optimizer=False)
 
         # Fit generator and start training
         print("Starting training ...")
@@ -137,7 +137,7 @@ def train_model():
             return
 
         # Add model checkpoint
-        checkpoint = ModelCheckpoint("model_out.hdf5", monitor="val_loss", verbose=1, save_best_only=True)
+        # checkpoint = ModelCheckpoint("model_out.hdf5", monitor="val_loss", verbose=1, save_best_only=True)
 
         es = EarlyStopping(monitor="val_loss", mode="min", verbose=1, patience=5)
 
@@ -151,7 +151,7 @@ def train_model():
         terminateonnan = TerminateOnNan()
 
         # add the learning rate schedule to the list of callbacks
-        callbacks = [checkpoint, training_monitor, terminateonnan, SaveCallback()]
+        callbacks = [training_monitor, terminateonnan, SaveCallback()]
 
         # Apply learning rate schedules
         if args["lr_scheduler"] == "reduce_lr_on_plateau":
@@ -164,8 +164,8 @@ def train_model():
             #  base_lr (initial learning rate which is the lower boundary in the cycle)
             lr_scheduler = CyclicLR(
                 mode="triangular",
-                base_lr=1e-4,
-                max_lr=1e-1,
+                base_lr=1e-6,
+                max_lr=1e-2,
                 step_size=8 * (train_generator.dataset_size / args["batch_size"]),
             )
             callbacks += [lr_scheduler]
@@ -183,11 +183,11 @@ def train_model():
             age_model.model.fit_generator(
                 generator=train_generator,
                 validation_data=validation_generator,
-                epochs=2,
+                epochs=4,
                 callbacks=callbacks,
                 verbose=1,
-                max_queue_size=args["batch_size"] * 10,
-                workers=3,
+                max_queue_size=args["batch_size"] * 5,
+                workers=4,
                 use_multiprocessing=False
             )
 
@@ -201,11 +201,11 @@ def train_model():
             age_model.model.fit_generator(
                 generator=train_generator,
                 validation_data=validation_generator,
-                epochs=35,
+                epochs=50,
                 callbacks=callbacks,
                 verbose=1,
                 max_queue_size=args["batch_size"] * 10,
-                workers=3,
+                workers=4,
                 use_multiprocessing=False
             )
         else:
@@ -216,16 +216,15 @@ def train_model():
                 callbacks=callbacks,
                 verbose=1,
                 max_queue_size=args["batch_size"] * 10,
-                workers=3,
-                use_multiprocessing=False
+                workers=7,
+                use_multiprocessing=True
             )
 
         # save the entire model
-        age_model.model.save("model.h5")
+        age_model.model.save("final.h5", include_optimizer=False)
     elif args["model_path"] and args["test"]:
         # Load model from file
         age_model.model = load_model(args["model_path"])
-
         image_files = [f for f in os.listdir(args["test_sample_dir"])]
 
         for file in image_files:
@@ -236,8 +235,8 @@ def train_model():
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = cv2.resize(image, (img_dim, img_dim))
 
-            basemodel_preprocess = age_model.preprocessing_function()
-            image = basemodel_preprocess(image)
+            #basemodel_preprocess = age_model.preprocessing_function()
+            #image = basemodel_preprocess(image)
             image = np.expand_dims(image, axis=0)
 
             file_name = os.path.splitext(file)[0]
