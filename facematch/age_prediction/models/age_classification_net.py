@@ -4,7 +4,7 @@ from keras.optimizers import Adam
 from keras.layers.normalization import BatchNormalization
 from keras.layers import Dense, GlobalAveragePooling2D
 from keras.applications.mobilenet_v2 import MobileNetV2
-from keras_applications.resnet_v2 import ResNet50V2
+from keras.applications.resnet50 import ResNet50
 from keras.layers.core import Dropout
 
 from facematch.age_prediction.utils.utils import age_ranges_number
@@ -30,13 +30,14 @@ class AgeClassificationNet:
 
     def build(self):
         if self.base_model_name == MOBILENET_MODEL_NAME:
-            print("Mobilenetv2 build")
             self.base_model = MobileNetV2(input_shape=self.img_shape, include_top=False, weights="imagenet")
         elif self.base_model_name == RESNET_MODEL_NAME:
             self.base_model = ResNet50(input_shape=self.img_shape, include_top=False, weights="imagenet")
 
         x = self.base_model.output
         x = GlobalAveragePooling2D()(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
 
         if self.range_mode:
             age_classes_number = age_ranges_number()
@@ -57,11 +58,9 @@ class AgeClassificationNet:
     def _get_base_module(self):
         # import Keras base model module
         if self.base_model_name == MOBILENET_MODEL_NAME:
-            print("Mobilenetv2 base")
             self.base_module = importlib.import_module("keras.applications.mobilenet_v2")
         elif self.base_model_name == RESNET_MODEL_NAME:
-            # resnet_v2 has same preprocessing as mobilenetv2
-            self.base_module = importlib.import_module("keras.applications.mobilenet_v2")
+            self.base_module = importlib.import_module("keras.applications.resnet50")
 
     def compile(self):
         optimizer = Adam(lr=self.learning_rate)
