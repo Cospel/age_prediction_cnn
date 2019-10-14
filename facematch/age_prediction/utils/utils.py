@@ -9,14 +9,14 @@ AGE_RANGES_UPPER_THRESH = 80
 def build_age_vector(age, deviation):
     """Build AGE vector as a normal probability histogram"""
     # Sample from a normal distribution using numpy's random number generator
-    mean, std = age, deviation / 5.0
-    bins_number = deviation * 2 + 1
-    samples = np.random.normal(mean, std, size=1000000)
+    mean, std = age, deviation - 2
+    bins_number = deviation * 2 + 2
+    samples = np.random.normal(mean, 3, size=10000)
 
     age_vec = np.zeros(shape=(MAX_AGE))
 
     # Compute a histogram of the sample
-    bins = np.linspace(mean - deviation - 1, mean + deviation - 1, bins_number)
+    bins = np.linspace(mean - deviation, mean + deviation, bins_number)
     histogram, bins = np.histogram(samples, bins=bins)
 
     # Get index of mean in histogram and start / end of histogram in AGE vector
@@ -58,3 +58,14 @@ def get_range(index):
         return (RANGE_LENGTH * index, None)
 
     return (RANGE_LENGTH * index, RANGE_LENGTH * (index + 1))
+
+
+if __name__ == "__main__":
+    vector = build_age_vector(20, 5)
+    print(vector, vector[15], vector[25], vector.sum())
+    import matplotlib.pyplot as plt
+    plt.bar(np.arange(0,100, 1), vector) 
+    plt.ylabel('prob')
+    plt.xlabel('age')
+    plt.title('age vector')
+    plt.show()
